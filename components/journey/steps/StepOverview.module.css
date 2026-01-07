@@ -1,0 +1,202 @@
+/* Cue Overview step specific styles */
+
+:global(.journey-step-overview) {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Agent bubble is already styled globally in JourneySection.module.css;
+   this modifier just allows a slightly wider version for this step. */
+:global(.journey-agent-bubble--wide) {
+  max-width: 420px;
+}
+
+/* Main card that wraps the cue overview list */
+:global(.overview-card) {
+  margin-top: 0.25rem;
+  padding: 1.5rem 1.4rem;
+  border-radius: 24px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  
+}
+
+/* Header inside card */
+:global(.overview-header) {
+  margin-bottom: 1.1rem;
+}
+
+:global(.overview-title) {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+:global(.overview-subtitle) {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+/* List wrapper */
+:global(.overview-list) {
+  border-radius: 18px;
+  border: 1px solid #f3f4f6;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+:global(.overview-empty) {
+  padding: 0.85rem 1rem;
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+/* Single row */
+:global(.overview-row) {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border: none;
+  border-bottom: 1px solid #f3f4f6;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.08s ease;
+}
+
+:global(.overview-row:last-child) {
+  border-bottom: none;
+}
+
+
+:global(.overview-row:hover) {
+  background: #f9fafb;
+}
+
+:global(.overview-row--disabled) {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+:global(.overview-row--disabled:hover) {
+  background: #ffffff;
+  box-shadow: none;
+  transform: none;
+}
+
+:global(.overview-row--disabled .overview-link) {
+  text-decoration: none;
+}
+
+/* Active / selected row */
+:global(.overview-row--active) {
+  background: #f5f7ff;
+  box-shadow: inset 0 0 0 1px #e0e7ff;
+}
+
+/* Left side of row */
+:global(.overview-row-main) {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+:global(.overview-row-meta) {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Icon bubble */
+:global(.overview-icon) {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #eef2ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+:global(.overview-icon-symbol) {
+  font-size: 0.85rem;
+  color: #4f46e5;
+}
+
+/* Text block */
+:global(.overview-text) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: left;
+}
+
+:global(.overview-text-title) {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+:global(.overview-text-description) {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+/* Right side link */
+:global(.overview-link) {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #6366f1;
+  white-space: nowrap;
+}
+
+:global(.overview-severity) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+:global(.overview-severity--high) {
+  background: #ef4444; /* red */
+}
+
+:global(.overview-severity--medium) {
+  background: #f97316; /* orange */
+}
+
+:global(.overview-severity--low) {
+  background: #facc15; /* yellow */
+}
+
+:global(.overview-severity--minimal) {
+  background: #d1d5db; /* gray */
+}
+
+/* Responsive tweaks */
+@media (max-width: 640px) {
+  :global(.overview-card) {
+    padding: 1.25rem 1.1rem;
+    border-radius: 20px;
+  }
+
+  :global(.overview-row) {
+    padding-inline: 0.85rem;
+  }
+
+  :global(.overview-row-main) {
+    gap: 0.7rem;
+  }
+
+  :global(.overview-row-meta) {
+    gap: 0.35rem;
+  }
+}

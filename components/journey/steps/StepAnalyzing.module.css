@@ -1,0 +1,58 @@
+/* Analyzing step specific styles */
+
+:global(.journey-step-analyzing) {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+  
+  :global(.journey-analysis-list) {
+    margin-top: 0.25rem;
+    padding: 1.25rem 1.1rem;
+    border-radius: 24px;
+    border: 1px solid #e5e7eb;
+    background: linear-gradient(135deg, #f9fafb, #ffffff);
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+  
+  :global(.journey-analysis-item) {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+  
+  :global(.journey-analysis-text) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  
+  :global(.journey-analysis-dot) {
+    margin-top: 0.25rem;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: #2563eb;
+    flex-shrink: 0;
+  }
+  
+  :global(.journey-analysis-title) {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #111827;
+  }
+  
+  :global(.journey-analysis-description) {
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: #6b7280;
+  }
+  
+  @media (max-width: 640px) {
+    :global(.journey-analysis-list) {
+      padding: 1.1rem 0.9rem;
+      border-radius: 20px;
+    }
+  }
