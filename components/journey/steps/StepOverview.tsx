@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Tooltip } from "@mui/material";
 import "./StepOverview.module.css";
 
 interface PredictionScore {
@@ -29,15 +30,15 @@ interface StepOverviewProps {
 
 const getCueSeverityLabel = (score: number): string => {
   if (score >= 0.75) {
-    return "High model focus";
+    return "High model attention";
   }
   if (score >= 0.4) {
-    return "Medium model focus";
+    return "Medium model attention";
   }
   if (score > 0.1) {
-    return "Low model focus";
+    return "Low model attention";
   }
-  return "Minimal model focus";
+  return "Low model attention";
 };
 
 const getCueSeverityClass = (score: number): string => {
@@ -58,6 +59,9 @@ const StepOverview: React.FC<StepOverviewProps> = ({
   onSelectCue,
   predictionResult,
 }) => {
+  const modelAttentionTooltip =
+    "Model attention indicates how strongly the AI attended to this cue during its prediction, based on Grad-CAM activations. It does not indicate how important the cue is objectively.";
+
   const handleSelect = (cueId: number) => {
     if (onSelectCue) {
       onSelectCue(cueId);
@@ -119,6 +123,16 @@ const StepOverview: React.FC<StepOverviewProps> = ({
                     <span className="overview-text-title">{cue.title}</span>
                     <span className="overview-text-description">
                       {severityLabel}
+                      <Tooltip title={modelAttentionTooltip} arrow>
+                        <span
+                          className="overview-info-icon"
+                          role="img"
+                          aria-label="Model attention info"
+                          tabIndex={0}
+                        >
+                          ⓘ
+                        </span>
+                      </Tooltip>
                     </span>
                   </div>
                 </div>

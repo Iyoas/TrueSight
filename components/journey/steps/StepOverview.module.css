@@ -146,6 +146,18 @@
 :global(.overview-text-description) {
   font-size: 0.75rem;
   color: #6b7280;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+:global(.overview-info-icon) {
+  font-size: 0.7rem;
+  color: #9ca3af;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
 }
 
 /* Right side link */

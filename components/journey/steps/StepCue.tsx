@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
+import { Skeleton } from "@mui/material";
 import "./StepCue.module.css";
 
 type Decision = "agree" | "not_sure" | "disagree" | null;
@@ -58,6 +59,7 @@ const StepCue: React.FC<StepCueProps> = ({
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
   const [explanationError, setExplanationError] = useState<string | null>(null);
   const [explanationData, setExplanationData] = useState<CueExplanation | null>(null);
+  const isHowToReadLoading = isLoadingExplanation || explanationData == null;
 
   useEffect(() => {
     setDecision(existingAnswer ?? null);
@@ -81,7 +83,7 @@ const StepCue: React.FC<StepCueProps> = ({
   switch (normalizedTitle) {
     case "texture":
       agentIntro =
-        "Let's take a closer look at the textures in this image. Here is how the model focused on this aspect.";
+        "Let's take a closer look at the textures in this image. Here is how the model attended to this aspect.";
       break;
     case "lighting":
       agentIntro =
@@ -116,7 +118,7 @@ const StepCue: React.FC<StepCueProps> = ({
       case "geometry":
         return "This geometry cue emphasizes shapes, edges, and alignment. It can help you inspect whether object proportions and contours look plausible.";
       default:
-        return "This visual cue summarizes one aspect of what the model focused on. Use it to inspect the highlighted regions more carefully.";
+        return "This visual cue summarizes one aspect of what the model attended to. Use it to inspect the highlighted regions more carefully.";
     }
   };
 
@@ -166,6 +168,7 @@ const StepCue: React.FC<StepCueProps> = ({
           }
           console.error("Error fetching user cue explanation", error);
           setExplanationError("Could not generate guidance for this observation.");
+          setExplanationData({ summary: "", bullets: [], questions: [] });
         } finally {
           setIsLoadingExplanation(false);
         }
@@ -224,6 +227,7 @@ const StepCue: React.FC<StepCueProps> = ({
         }
         console.error("Error fetching cue explanation", error);
         setExplanationError("I couldn't generate a detailed explanation for this cue. You can still use the highlight to inspect the image yourself.");
+        setExplanationData({ summary: "", bullets: [], questions: [] });
       } finally {
         setIsLoadingExplanation(false);
       }
@@ -293,61 +297,65 @@ const StepCue: React.FC<StepCueProps> = ({
               />
             </div>
             <p className="cue-image-legend">
-              The overlay highlights where the model focused most when making its decision. It is not
+              The overlay highlights where the model attended most when making its decision. It is not
               a direct AI-vs-human map, but a visualization of relative attention.
             </p>
           </div>
         </div>
 
         <div className="cue-explanation">
-          <h4 className="cue-explanation-title">How to read this cue</h4>
-
-          {isLoadingExplanation && (
-            <p className="cue-explanation-text cue-explanation-text--muted">
-              Analyzing this cue in more detail...
-            </p>
-          )}
-
-          {explanationError && (
-            <p className="cue-explanation-text cue-explanation-text--error">
-              {explanationError}
-            </p>
-          )}
-
-          {explanationData ? (
+          {isHowToReadLoading ? (
+            <div aria-hidden="true" style={{ width: "100%" }}>
+              <Skeleton variant="text" height={32} style={{ width: "100%" }} />
+              <Skeleton variant="text" style={{ width: "100%" }} />
+              <Skeleton variant="text" style={{ width: "100%" }} />
+              <Skeleton variant="text" style={{ width: "100%" }} />
+            </div>
+          ) : (
             <>
-              {explanationData.summary && (
-                <p className="cue-explanation-text">{explanationData.summary}</p>
+              <h4 className="cue-explanation-title">How to read this cue</h4>
+
+              {explanationError && (
+                <p className="cue-explanation-text cue-explanation-text--error">
+                  {explanationError}
+                </p>
               )}
 
-              {explanationData.bullets && explanationData.bullets.length > 0 && (
-                <ul className="cue-explanation-list">
-                  {explanationData.bullets.map((item, index) => (
-                    <li key={index} className="cue-explanation-list-item">
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {explanationData ? (
+                <>
+                  {explanationData.summary && (
+                    <p className="cue-explanation-text">{explanationData.summary}</p>
+                  )}
 
-              {explanationData.questions && explanationData.questions.length > 0 && (
-                <div className="cue-questions">
-                  <h5 className="cue-questions-title">Questions to guide your review</h5>
-                  <ul className="cue-questions-list">
-                    {explanationData.questions.map((q, index) => (
-                      <li key={index} className="cue-questions-list-item">
-                        {q}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                  {explanationData.bullets && explanationData.bullets.length > 0 && (
+                    <ul className="cue-explanation-list">
+                      {explanationData.bullets.map((item, index) => (
+                        <li key={index} className="cue-explanation-list-item">
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {explanationData.questions && explanationData.questions.length > 0 && (
+                    <div className="cue-questions">
+                      <h5 className="cue-questions-title">Questions to guide your review</h5>
+                      <ul className="cue-questions-list">
+                        {explanationData.questions.map((q, index) => (
+                          <li key={index} className="cue-questions-list-item">
+                            {q}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              ) : (
+                !explanationError && (
+                  <p className="cue-explanation-text">{getFallbackExplanation()}</p>
+                )
               )}
             </>
-          ) : (
-            !isLoadingExplanation &&
-            !explanationError && (
-              <p className="cue-explanation-text">{getFallbackExplanation()}</p>
-            )
           )}
         </div>
       </div>

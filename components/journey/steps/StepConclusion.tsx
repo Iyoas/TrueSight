@@ -6,7 +6,7 @@ export type VerdictLabel = "ai" | "human" | "uncertain";
 export interface ConclusionCueSummary {
   id: number | string;
   label: string;
-  score?: number; // 0–1 model focus
+  score?: number; // 0–1 model attention
   source?: "model" | "user" | "both";
   note?: string;
   userJudgement?: "agree" | "not_sure" | "disagree";
@@ -238,9 +238,9 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
     if (keyCues && keyCues.length > 0) {
       keyCues.forEach((cue) => {
         const focusPct =
-          cue.score != null ? `${Math.round(cue.score * 100)}% model focus` : "n/a";
+          cue.score != null ? `${Math.round(cue.score * 100)}% model attention` : "n/a";
         lines.push(
-          `- ${cue.label} (model focus: ${focusPct}, source: ${
+          `- ${cue.label} (model attention: ${focusPct}, source: ${
             cue.source ?? "model"
           })`
         );
@@ -466,7 +466,7 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
                 <ul className="conclusion-cue-list">
                   {keyCues.map((cue) => {
                     const focusPct =
-                      cue.score != null ? `${Math.round(cue.score * 100)}% model focus` : null;
+                    cue.score != null ? `${Math.round(cue.score * 100)}% model attention` : null;
 
                     return (
                       <li key={cue.id} className="conclusion-cue-item">
