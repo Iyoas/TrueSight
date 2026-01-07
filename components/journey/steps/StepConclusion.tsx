@@ -1,5 +1,11 @@
 import React, { useEffect, useState } from "react";
 import "./StepConclusion.module.css";
+import {
+  getDecisionLabel,
+  getJointConclusionTitle,
+  getJointOutcomeCallout,
+  getPartialAgreementSubtitle,
+} from "../../../lib/jointOutcomeUi";
 
 export type VerdictLabel = "ai" | "human" | "uncertain";
 
@@ -17,6 +23,13 @@ export interface StepConclusionProps {
   modelLabel: VerdictLabel;
   modelProbability?: number; // 0–1
   userLabel?: VerdictLabel;
+  aiDecision?: "AI_GENERATED" | "HUMAN_GENERATED";
+  humanDecision?: "AI_GENERATED" | "HUMAN_GENERATED" | "UNCERTAIN";
+  finalConclusion?: {
+    kind: "AGREEMENT" | "PARTIAL_AGREEMENT" | "DISAGREEMENT";
+    label: "AI_GENERATED" | "HUMAN_GENERATED" | null;
+    leaning?: "AI" | "HUMAN";
+  };
 
   // Optional metadata
   keyCues?: ConclusionCueSummary[];
@@ -52,6 +65,9 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
   modelLabel,
   modelProbability,
   userLabel,
+  aiDecision,
+  humanDecision,
+  finalConclusion,
   keyCues = [],
   userConfidence,
   modelConfidenceText,
@@ -62,11 +78,26 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
   const modelVerdictText = verdictLabelToText(modelLabel);
   const userVerdictText = userLabel ? verdictLabelToText(userLabel) : null;
   const finalVerdictLabel: VerdictLabel = userLabel ?? modelLabel;
-  const finalVerdictText = verdictLabelToText(finalVerdictLabel);
+  const finalVerdictText = finalConclusion
+    ? finalConclusion.kind === "AGREEMENT" && finalConclusion.label
+      ? `Agreement - ${finalConclusion.label === "AI_GENERATED" ? "AI-generated" : "Human-generated"}`
+      : finalConclusion.kind === "PARTIAL_AGREEMENT"
+      ? "Partial agreement"
+      : "Disagreement"
+    : verdictLabelToText(finalVerdictLabel);
   const probabilityText = formatProbability(modelProbability);
 
   const hasUserVerdict = Boolean(userLabel);
-  const isAgreement = hasUserVerdict && userLabel === modelLabel;
+  const agreementFlag =
+    finalConclusion?.kind === "AGREEMENT"
+      ? true
+      : finalConclusion?.kind === "DISAGREEMENT"
+      ? false
+      : finalConclusion?.kind === "PARTIAL_AGREEMENT"
+      ? null
+      : hasUserVerdict
+      ? userLabel === modelLabel
+      : null;
 
   const impactLabel =
     impactLevel === "high"
@@ -92,6 +123,12 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [isSummaryReady, setIsSummaryReady] = useState(false);
+  const jointOutcomeTitle = getJointConclusionTitle(finalConclusion);
+  const jointOutcomeCallout = getJointOutcomeCallout(finalConclusion);
+  const partialAgreementSubtitle =
+    finalConclusion?.kind === "PARTIAL_AGREEMENT" && aiDecision && humanDecision
+      ? getPartialAgreementSubtitle(aiDecision, humanDecision)
+      : null;
 
   useEffect(() => {
     // Only try to generate a summary if we have at least some meaningful info
@@ -118,7 +155,7 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
           model_probability: modelProbability ?? null,
           user_label: userLabel ?? null,
           user_confidence: userConfidence ?? null,
-          agreement: hasUserVerdict ? isAgreement : null,
+          agreement: hasUserVerdict ? agreementFlag : null,
           cues: (keyCues || []).map((cue) => ({
             id: cue.id,
             label: cue.label,
@@ -168,7 +205,7 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
     return () => {
       controller.abort();
     };
-  }, [modelLabel, modelProbability, userLabel, userConfidence, hasUserVerdict, isAgreement, keyCues]);
+  }, [modelLabel, modelProbability, userLabel, userConfidence, hasUserVerdict, agreementFlag, keyCues]);
 
   const showSkeleton = !isSummaryReady;
 
@@ -193,7 +230,7 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
     lines.push("");
 
     // Model vs user verdict
-    lines.push(`Final conclusion (human-led): ${finalVerdictText}`);
+    lines.push(`Final joint conclusion: ${jointOutcomeTitle ?? finalVerdictText}`);
     lines.push(`Model prediction: ${modelVerdictText}`);
     lines.push(
       `Model confidence: ${
@@ -205,12 +242,16 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
         userVerdictText ? userVerdictText : "not provided"
       }`
     );
-    if (hasUserVerdict) {
+    if (finalConclusion?.kind === "PARTIAL_AGREEMENT") {
+      lines.push(
+        "Agreement: You and the model did not fully agree. The model has a prediction while your assessment is uncertain."
+      );
+    } else if (hasUserVerdict && agreementFlag != null) {
       lines.push(
         `Agreement: ${
-          isAgreement
-            ? "You and the model agree on this image."
-            : "You and the model disagree on this image."
+          agreementFlag
+            ? "You and the model reached the same conclusion."
+            : "You and the model reached different conclusions."
         }`
       );
     } else {
@@ -277,7 +318,7 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
       {/* Header */}
       <header className="step-header">
         <h2 className="step-title">
-          {showSkeleton ? <SkeletonLine size="title" width="55%" /> : "Step 5: Final conclusion"}
+          {showSkeleton ? <SkeletonLine size="title" width="55%" /> : "Step 5: Final joint conclusion"}
         </h2>
         <p className="step-subtitle">
           {showSkeleton ? (
@@ -293,11 +334,18 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
         {/* Hero verdict card */}
         <div className="conclusion-hero-card">
           <div className="conclusion-hero-label">
-            {showSkeleton ? <SkeletonLine size="label" width="45%" /> : "Final conclusion (human-led)"}
+            {showSkeleton ? <SkeletonLine size="label" width="45%" /> : "Final joint conclusion"}
           </div>
           <h3 className="conclusion-hero-verdict">
-            {showSkeleton ? <SkeletonLine size="title" width="60%" /> : finalVerdictText}
+            {showSkeleton ? (
+              <SkeletonLine size="title" width="60%" />
+            ) : (
+              jointOutcomeTitle ?? finalVerdictText
+            )}
           </h3>
+          {!showSkeleton && partialAgreementSubtitle && (
+            <div className="conclusion-text">{partialAgreementSubtitle}</div>
+          )}
 
           <div className="conclusion-hero-pill-row">
             <div className="conclusion-pill">
@@ -307,6 +355,8 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
               <span className="conclusion-pill-value">
                 {showSkeleton ? (
                   <SkeletonLine size="text" width="65%" />
+                ) : aiDecision ? (
+                  `${getDecisionLabel(aiDecision)}${probabilityText ? ` • ${probabilityText} confidence` : ""}`
                 ) : probabilityText ? (
                   `${probabilityText} confidence`
                 ) : (
@@ -321,17 +371,25 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
                   {showSkeleton ? <SkeletonLine size="label" width="40%" /> : "Your judgement"}
                 </span>
                 <span className="conclusion-pill-value">
-                  {showSkeleton ? <SkeletonLine size="text" width="55%" /> : userVerdictText}
+                  {showSkeleton ? (
+                    <SkeletonLine size="text" width="55%" />
+                  ) : humanDecision ? (
+                    getDecisionLabel(humanDecision)
+                  ) : (
+                    userVerdictText
+                  )}
                 </span>
               </div>
             )}
           </div>
 
-          {hasUserVerdict && (
+          {hasUserVerdict && jointOutcomeCallout && (
             <div
               className={
                 "conclusion-agreement-banner" +
-                (isAgreement ? " conclusion-agreement-banner--agree" : " conclusion-agreement-banner--disagree")
+                (jointOutcomeCallout.tone === "agree"
+                  ? " conclusion-agreement-banner--agree"
+                  : " conclusion-agreement-banner--disagree")
               }
             >
               {showSkeleton ? (
@@ -344,21 +402,10 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
                     </span>
                   </span>
                 </>
-              ) : isAgreement ? (
-                <>
-                  <span className="conclusion-agreement-icon">✅</span>
-                  <span>
-                    You and the model <strong>agree</strong> on this image. This can increase trust, but keep in mind
-                    that both human and AI can still be wrong.
-                  </span>
-                </>
               ) : (
                 <>
-                  <span className="conclusion-agreement-icon">⚠️</span>
-                  <span>
-                    You and the model <strong>disagree</strong>. This is a valuable example of human–AI disagreement and
-                    worth a closer look.
-                  </span>
+                  <span className="conclusion-agreement-icon">{jointOutcomeCallout.icon}</span>
+                  <span>{jointOutcomeCallout.text}</span>
                 </>
               )}
             </div>
@@ -436,7 +483,7 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
                 <li>1. The image was uploaded and preprocessed.</li>
                 <li>2. The model produced an initial prediction.</li>
                 <li>3. You inspected the model&apos;s focus and explanation cues.</li>
-                <li>4. You formed a final judgement based on both model and your own reasoning.</li>
+                <li>4. A joint conclusion was derived by comparing the model&apos;s prediction with your cue-based assessment.</li>
               </ul>
             )}
           </section>

@@ -8,6 +8,13 @@ import StepAnalyzing from "./steps/StepAnalyzing";
 import StepOverview from "./steps/StepOverview";
 import StepCue from "./steps/StepCue";
 import StepConclusion, { type VerdictLabel, type ConclusionCueSummary } from "./steps/StepConclusion";
+import {
+  computeFinalConclusion,
+  computeHumanDecision,
+  type AIDecision,
+  type CanonicalCueValue,
+  type HumanDecision,
+} from "../../lib/decisionLogic";
 
 type StepId = 1 | 2 | 3 | 4 | 5;
 
@@ -97,20 +104,6 @@ const JourneySection: React.FC = () => {
   const modelLabel: VerdictLabel = deriveModelLabel();
   const modelProbability = predictionResult?.confidence;
 
-  const deriveUserLabel = (): VerdictLabel | undefined => {
-    if (!predictionResult?.cues) return undefined;
-    const answers = Object.values(cueAnswers);
-    if (answers.length === 0) return undefined;
-
-    const agreeCount = answers.filter((a) => a === "agree").length;
-    const disagreeCount = answers.filter((a) => a === "disagree").length;
-
-    if (agreeCount === disagreeCount) return "uncertain";
-    if (agreeCount > disagreeCount) return modelLabel;
-    return modelLabel === "ai" ? "human" : "ai";
-  };
-
-  const userVerdictLabel = deriveUserLabel();
 
   const modelCueSummaries: ConclusionCueSummary[] = predictionResult?.cues
     ? [...predictionResult.cues]
@@ -202,6 +195,41 @@ const JourneySection: React.FC = () => {
             source: "model" as const,
           },
         ];
+
+  const decisionToCanonicalCueValue = (
+    decision?: "agree" | "not_sure" | "disagree"
+  ): CanonicalCueValue => {
+    if (decision === "agree") return "AI";
+    if (decision === "disagree") return "HUMAN";
+    return "UNCERTAIN";
+  };
+
+  const decisionCues = modelCues.slice(0, 4);
+  const humanCueValues = decisionCues.map((cue) =>
+    decisionToCanonicalCueValue(cueAnswers[cue.id])
+  );
+  const humanDecision: HumanDecision = computeHumanDecision(humanCueValues);
+
+  const deriveAIDecision = (): AIDecision => {
+    const raw = predictionResult?.prediction?.toLowerCase() ?? "";
+    if (raw.includes("ai") || raw.includes("generated") || raw.includes("fake")) {
+      return "AI_GENERATED";
+    }
+    if (raw.includes("human") || raw.includes("real")) {
+      return "HUMAN_GENERATED";
+    }
+    return modelLabel === "ai" ? "AI_GENERATED" : "HUMAN_GENERATED";
+  };
+
+  const aiDecision: AIDecision = deriveAIDecision();
+  const finalConclusion = computeFinalConclusion(aiDecision, humanDecision);
+
+  const userVerdictLabel: VerdictLabel | undefined =
+    humanDecision === "AI_GENERATED"
+      ? "ai"
+      : humanDecision === "HUMAN_GENERATED"
+      ? "human"
+      : "uncertain";
 
   const derivedCues: Cue[] = [...userCues, ...modelCues];
   const allCuesAnswered = derivedCues.length > 0 && derivedCues.every((cue) => cueAnswers[cue.id] !== undefined);
@@ -554,6 +582,9 @@ const JourneySection: React.FC = () => {
                 modelLabel={modelLabel}
                 modelProbability={modelProbability}
                 userLabel={userVerdictLabel}
+                aiDecision={aiDecision}
+                humanDecision={humanDecision}
+                finalConclusion={finalConclusion}
                 keyCues={keyCues}
                 impactLevel={undefined}
                 onFinish={handleStartOver}
