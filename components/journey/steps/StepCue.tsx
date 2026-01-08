@@ -12,7 +12,17 @@ interface StepCueProps {
   subtitle?: string;
   imageSrc?: string;
   originalImageSrc?: string;
-  explanation?: string; // optional fallback explanation from the parent
+  cueText?: string | null;
+  cueTextStatus?: "idle" | "loading" | "ready" | "error";
+  helperText?: {
+    whereToLook: string;
+    whatToCheck: string;
+    bothWaysSupport: string;
+    bothWaysChallenge: string;
+    questions: string[];
+  } | null;
+  helperTextStatus?: "idle" | "loading" | "ready" | "error";
+  onRetryHelperText?: () => void;
   cueType?: string;
   predictionLabel?: string; // "ai" | "hum"
   predictionConfidence?: number; // 0-1
@@ -27,48 +37,30 @@ interface StepCueProps {
   existingAnswer?: Decision;
 }
 
-/**
- * Explanation object returned by the backend /explain_cue endpoint.
- */
-type CueExplanation = {
-  summary: string;
-  bullets: string[];
-  questions: string[];
-};
-
 const StepCue: React.FC<StepCueProps> = ({
   title = "Lighting",
   subtitle = "This cue highlights one aspect of the model's focus in its decision.",
   imageSrc = "/heatmap-picture.png",
   originalImageSrc,
-  explanation,
-  cueType,
-  predictionLabel,
-  predictionConfidence,
-  cueScore,
-  imageContext,
-  image_base64,
-  heatmap_base64,
+  cueText,
+  cueTextStatus = "idle",
+  helperText,
+  helperTextStatus = "idle",
+  onRetryHelperText,
   cueId,
   cueSource,
-  userObservationText,
   onDecisionChange,
   existingAnswer,
 }) => {
   const [decision, setDecision] = useState<Decision>(existingAnswer ?? null);
-  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
-  const [explanationError, setExplanationError] = useState<string | null>(null);
-  const [explanationData, setExplanationData] = useState<CueExplanation | null>(null);
-  const isHowToReadLoading = isLoadingExplanation || explanationData == null;
+  const isUserCue = cueSource === "user";
+  const isHowToReadLoading = isUserCue
+    ? helperTextStatus !== "ready"
+    : cueTextStatus !== "ready";
 
   useEffect(() => {
     setDecision(existingAnswer ?? null);
   }, [existingAnswer]);
-
-  // Prefer an explicit heatmap_base64 from props; otherwise, if imageSrc looks like a data URL,
-  // treat it as a heatmap image for the multimodal explanation.
-  const effectiveHeatmapBase64 =
-    heatmap_base64 || (imageSrc && imageSrc.startsWith("data:image") ? imageSrc : undefined);
 
   const handleDecision = (value: Exclude<Decision, null>) => {
     setDecision(value);
@@ -102,155 +94,6 @@ const StepCue: React.FC<StepCueProps> = ({
         "Let's look closely at this cue. Here is how it contributed to the model's decision.";
       break;
   }
-
-  const getFallbackExplanation = (): string => {
-    if (explanation) {
-      return explanation;
-    }
-
-    switch (normalizedTitle) {
-      case "texture":
-        return "This texture cue highlights where the model was sensitive to surface detail. You can use it to check whether surfaces look naturally detailed, or unusually smooth or repetitive.";
-      case "lighting":
-        return "This lighting cue highlights how light and shadow are distributed in the image. You can use it to check whether illumination and shadows look consistent with a real scene.";
-      case "background":
-        return "This background cue shows where the model paid attention to regions behind the main subject. You can check whether the background looks coherent, with realistic depth and structure.";
-      case "geometry":
-        return "This geometry cue emphasizes shapes, edges, and alignment. It can help you inspect whether object proportions and contours look plausible.";
-      default:
-        return "This visual cue summarizes one aspect of what the model attended to. Use it to inspect the highlighted regions more carefully.";
-    }
-  };
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    const fetchExplanation = async () => {
-      if (cueSource === "user") {
-        if (!userObservationText || !image_base64) {
-          return;
-        }
-        try {
-          setIsLoadingExplanation(true);
-          setExplanationError(null);
-          setExplanationData(null);
-
-          const payload = {
-            image_base64,
-            user_observation: userObservationText,
-            model_prediction: predictionLabel ?? null,
-            model_confidence: predictionConfidence ?? null,
-          };
-
-          const response = await fetch("http://localhost:8000/explain_user_cue", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-            signal: controller.signal,
-          });
-
-          if (!response.ok) {
-            throw new Error(`Failed to fetch user cue explanation: ${response.status} ${response.statusText}`);
-          }
-
-          const data = await response.json();
-
-          setExplanationData({
-            summary: data.summary ?? "",
-            bullets: Array.isArray(data.bullets) ? data.bullets : [],
-            questions: Array.isArray(data.questions) ? data.questions : [],
-          });
-        } catch (error) {
-          if (controller.signal.aborted) {
-            return;
-          }
-          console.error("Error fetching user cue explanation", error);
-          setExplanationError("Could not generate guidance for this observation.");
-          setExplanationData({ summary: "", bullets: [], questions: [] });
-        } finally {
-          setIsLoadingExplanation(false);
-        }
-        return;
-      }
-
-      if (
-        !predictionLabel ||
-        predictionConfidence === undefined ||
-        predictionConfidence === null ||
-        cueScore === undefined ||
-        cueScore === null
-      ) {
-        return;
-      }
-
-      try {
-        setIsLoadingExplanation(true);
-        setExplanationError(null);
-        setExplanationData(null);
-
-        const payload = {
-          cue_type: (cueType || normalizedTitle || "cue"),
-          cue_title: title,
-          prediction_label: predictionLabel,
-          prediction_confidence: predictionConfidence,
-          cue_score: cueScore,
-          image_context: imageContext ?? undefined,
-          image_base64: image_base64 ?? undefined,
-          heatmap_base64: effectiveHeatmapBase64 ?? undefined,
-        };
-
-        const response = await fetch("http://localhost:8000/explain_cue", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch cue explanation: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-
-        setExplanationData({
-          summary: data.summary ?? "",
-          bullets: Array.isArray(data.bullets) ? data.bullets : [],
-          questions: Array.isArray(data.questions) ? data.questions : [],
-        });
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return;
-        }
-        console.error("Error fetching cue explanation", error);
-        setExplanationError("I couldn't generate a detailed explanation for this cue. You can still use the highlight to inspect the image yourself.");
-        setExplanationData({ summary: "", bullets: [], questions: [] });
-      } finally {
-        setIsLoadingExplanation(false);
-      }
-    };
-
-    fetchExplanation();
-
-    return () => {
-      controller.abort();
-    };
-  }, [
-    cueSource,
-    cueType,
-    cueScore,
-    imageContext,
-    normalizedTitle,
-    predictionConfidence,
-    predictionLabel,
-    title,
-    image_base64,
-    effectiveHeatmapBase64,
-    userObservationText,
-  ]);
 
   return (
     <div className="journey-step journey-step-cue">
@@ -295,60 +138,60 @@ const StepCue: React.FC<StepCueProps> = ({
         </div>
 
         <div className="cue-explanation">
-          {isHowToReadLoading ? (
-            <div aria-hidden="true" style={{ width: "100%" }}>
-              <Skeleton variant="text" height={32} style={{ width: "100%" }} />
-              <Skeleton variant="text" style={{ width: "100%" }} />
-              <Skeleton variant="text" style={{ width: "100%" }} />
-              <Skeleton variant="text" style={{ width: "100%" }} />
-            </div>
-          ) : (
-            <>
-              <h4 className="cue-explanation-title">How to read this cue</h4>
-
-              {explanationError && (
-                <p className="cue-explanation-text cue-explanation-text--error">
-                  {explanationError}
-                </p>
-              )}
-
-              {explanationData ? (
-                <>
-                  {explanationData.summary && (
-                    <p className="cue-explanation-text">{explanationData.summary}</p>
-                  )}
-
-                  {explanationData.bullets && explanationData.bullets.length > 0 && (
-                    <ul className="cue-explanation-list">
-                      {explanationData.bullets.map((item, index) => (
-                        <li key={index} className="cue-explanation-list-item">
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  {explanationData.questions && explanationData.questions.length > 0 && (
-                    <div className="cue-questions">
-                      <h5 className="cue-questions-title">Questions to guide your review</h5>
-                      <ul className="cue-questions-list">
-                        {explanationData.questions.map((q, index) => (
-                          <li key={index} className="cue-questions-list-item">
-                            {q}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </>
-              ) : (
-                !explanationError && (
-                  <p className="cue-explanation-text">{getFallbackExplanation()}</p>
-                )
-              )}
-            </>
-          )}
+      {isHowToReadLoading ? (
+        <div aria-hidden="true" style={{ width: "100%" }}>
+          <Skeleton variant="text" height={32} style={{ width: "100%" }} />
+          <Skeleton variant="text" style={{ width: "100%" }} />
+          <Skeleton variant="text" style={{ width: "100%" }} />
+          <Skeleton variant="text" style={{ width: "100%" }} />
         </div>
+      ) : (
+        <>
+          <h4 className="cue-explanation-title">How to read this cue</h4>
+
+          {isUserCue ? (
+            helperTextStatus === "ready" && helperText ? (
+              <>
+                <p className="cue-explanation-text">{helperText.whereToLook}</p>
+                <p className="cue-explanation-text">{helperText.whatToCheck}</p>
+                <p className="cue-explanation-text">{helperText.bothWaysSupport}</p>
+                <p className="cue-explanation-text">{helperText.bothWaysChallenge}</p>
+                {helperText.questions && helperText.questions.length > 0 && (
+                  <ul className="cue-explanation-list">
+                    {helperText.questions.map((q, index) => (
+                      <li key={index} className="cue-explanation-list-item">
+                        {q}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <div className="cue-explanation-error">
+                <p className="cue-explanation-text cue-explanation-text--error">
+                  Couldn't load explanation.
+                </p>
+                {onRetryHelperText && (
+                  <button
+                    type="button"
+                    className="cue-explanation-retry"
+                    onClick={onRetryHelperText}
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            )
+          ) : cueText ? (
+            <p className="cue-explanation-text">{cueText}</p>
+          ) : (
+            <p className="cue-explanation-text cue-explanation-text--error">
+              Couldn't load explanation.
+            </p>
+          )}
+        </>
+      )}
+    </div>
       </div>
 
       {/* Decision section */}

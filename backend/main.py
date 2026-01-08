@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from PIL import Image as PILImage
 import io
+import json
 import torch
 import numpy as np
 import base64
@@ -294,6 +295,27 @@ class CueExplanationResponse(BaseModel):
     questions: List[str]
 
 
+# ---- Batch cue explanation models ----
+
+class CueBatchItem(BaseModel):
+    cue_type: str
+    cue_title: str
+    cue_score: float
+    heatmap_base64: Optional[str] = None
+
+
+class CueBatchRequest(BaseModel):
+    prediction_label: str
+    prediction_confidence: float
+    image_context: Optional[str] = None
+    image_base64: Optional[str] = None
+    cues: List[CueBatchItem]
+
+
+class CueBatchResponse(BaseModel):
+    cue_text_by_type: Dict[str, str]
+
+
 # ---- User cue explanation models ----
 
 class UserCueExplanationRequest(BaseModel):
@@ -307,6 +329,25 @@ class UserCueExplanationResponse(BaseModel):
     summary: str
     bullets: List[str] = []
     questions: List[str] = []
+
+
+# ---- Custom cue explanation models ----
+
+class CustomCueExplanationRequest(BaseModel):
+    prediction_label: str
+    prediction_confidence: float
+    cue_type: str
+    cue_title: str
+    user_observation: str
+    image_base64: Optional[str] = None
+
+
+class CustomCueExplanationResponse(BaseModel):
+    where_to_look: str
+    what_to_check: str
+    both_ways_support: str
+    both_ways_challenge: str
+    questions: List[str]
 
 
 # ---- StepConclusion explanation models ----
@@ -426,14 +467,10 @@ async def predict_with_explainability(file: UploadFile = File(...)):
 
 # ---- Cue explanation endpoint ----
 
-@app.post("/explain_cue", response_model=CueExplanationResponse)
-async def explain_cue(payload: CueExplanationRequest):
+def generate_cue_explanation(payload: CueExplanationRequest) -> CueExplanationResponse:
     """
-    Generate a natural-language explanation for a single visual cue.
-    This does NOT re-classify the image; it only explains how the cue
-    might help a human interpret the model's decision.
+    Shared implementation for cue explanation generation.
     """
-
     cue_type = payload.cue_type.lower()
     prediction = payload.prediction_label.lower()
     confidence_pct = round(payload.prediction_confidence * 100, 1)
@@ -482,12 +519,10 @@ async def explain_cue(payload: CueExplanationRequest):
             f"{payload.image_context}"
         )
 
-    # Build multimodal user content: always include text, optionally include images
     user_content: List[Dict[str, Any]] = [
         {"type": "text", "text": user_message}
     ]
 
-    # If the frontend passes the original image as a base64 data URL, attach it
     if payload.image_base64:
         user_content.append(
             {
@@ -496,7 +531,6 @@ async def explain_cue(payload: CueExplanationRequest):
             }
         )
 
-    # Optionally also attach a cue-specific or global heatmap overlay if available
     if payload.heatmap_base64:
         user_content.append(
             {
@@ -506,7 +540,7 @@ async def explain_cue(payload: CueExplanationRequest):
         )
 
     completion = openai_client.chat.completions.create(
-        model="gpt-4o",  # multimodal-capable model
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": system_message},
             {
@@ -540,6 +574,37 @@ async def explain_cue(payload: CueExplanationRequest):
         bullets=bullet_lines,
         questions=question_lines[:2],
     )
+
+
+@app.post("/explain_cue", response_model=CueExplanationResponse)
+async def explain_cue(payload: CueExplanationRequest):
+    """
+    Generate a natural-language explanation for a single visual cue.
+    This does NOT re-classify the image; it only explains how the cue
+    might help a human interpret the model's decision.
+    """
+    return generate_cue_explanation(payload)
+
+
+@app.post("/explain_cues_batch", response_model=CueBatchResponse)
+async def explain_cues_batch(payload: CueBatchRequest):
+    cue_text_by_type: Dict[str, str] = {}
+
+    for cue in payload.cues:
+        cue_request = CueExplanationRequest(
+            cue_type=cue.cue_type,
+            cue_title=cue.cue_title,
+            prediction_label=payload.prediction_label,
+            prediction_confidence=payload.prediction_confidence,
+            cue_score=cue.cue_score,
+            image_context=payload.image_context,
+            image_base64=payload.image_base64,
+            heatmap_base64=cue.heatmap_base64,
+        )
+        explanation = generate_cue_explanation(cue_request)
+        cue_text_by_type[cue.cue_type.lower()] = explanation.summary
+
+    return CueBatchResponse(cue_text_by_type=cue_text_by_type)
 
 
 @app.post("/explain_user_cue", response_model=UserCueExplanationResponse)
@@ -619,6 +684,90 @@ async def explain_user_cue(payload: UserCueExplanationRequest):
         summary=summary,
         bullets=bullet_lines,
         questions=question_lines[:2],
+    )
+
+
+# ---- Custom cue helper endpoint ----
+
+@app.post("/explain_custom_cue", response_model=CustomCueExplanationResponse)
+async def explain_custom_cue(payload: CustomCueExplanationRequest):
+    prediction = payload.prediction_label.lower()
+    confidence_pct = round(payload.prediction_confidence * 100, 1)
+
+    system_message = (
+        "You are an assistant inside a visual analytics tool (TrueSight). "
+        "Help a user interpret their OWN observation as a visual cue.\n"
+        "RULES:\n"
+        "- NEVER describe what the image 'is' (no object naming).\n"
+        "- NEVER claim the image IS AI-generated or IS real.\n"
+        "- Focus on visual properties and where to inspect.\n"
+        "- Be concise and neutral.\n"
+    )
+
+    user_message = (
+        "Context:\n"
+        f"- Model prediction: '{prediction}' (confidence: {confidence_pct}%).\n"
+        f"- Cue type: '{payload.cue_type}' (title: '{payload.cue_title}').\n"
+        f"- User observation: {payload.user_observation}\n\n"
+        "Task:\n"
+        "Return a JSON object with exactly these fields:\n"
+        "{\n"
+        '  "whereToLook": "1 sentence",\n'
+        '  "whatToCheck": "2 sentences",\n'
+        '  "bothWaysSupport": "1 sentence",\n'
+        '  "bothWaysChallenge": "1 sentence",\n'
+        '  "questions": ["question 1", "question 2"]\n'
+        "}\n"
+        "Constraints:\n"
+        "- No object names.\n"
+        "- Exactly 2 questions.\n"
+        "- Keep total length under 120 words.\n"
+    )
+
+    user_content: List[Dict[str, Any]] = [
+        {"type": "text", "text": user_message}
+    ]
+
+    if payload.image_base64:
+        user_content.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": payload.image_base64},
+            }
+        )
+
+    completion = openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    raw_text = completion.choices[0].message.content or ""
+    cleaned = raw_text.strip().strip("`")
+    if cleaned.lower().startswith("json"):
+        cleaned = cleaned[4:].strip()
+
+    try:
+        parsed = json.loads(cleaned)
+    except Exception:
+        parsed = {}
+
+    where_to_look = str(parsed.get("whereToLook", "")).strip()
+    what_to_check = str(parsed.get("whatToCheck", "")).strip()
+    both_ways_support = str(parsed.get("bothWaysSupport", "")).strip()
+    both_ways_challenge = str(parsed.get("bothWaysChallenge", "")).strip()
+    questions = parsed.get("questions", [])
+    if not isinstance(questions, list):
+        questions = []
+
+    return CustomCueExplanationResponse(
+        where_to_look=where_to_look or "Check the exact region you described.",
+        what_to_check=what_to_check or "Look for the specific visual pattern you noticed.",
+        both_ways_support=both_ways_support or "If the pattern is consistent, it could support the model's prediction.",
+        both_ways_challenge=both_ways_challenge or "If the pattern looks natural, it could challenge the model's prediction.",
+        questions=[q for q in questions if isinstance(q, str)][:2],
     )
 
 

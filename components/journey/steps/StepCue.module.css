@@ -162,6 +162,25 @@
   color: #6b7280;
 }
 
+:global(.cue-explanation-error) {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+:global(.cue-explanation-retry) {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 0.78rem;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+:global(.cue-explanation-retry:hover) {
+  text-decoration: underline;
+}
+
 :global(.cue-questions) {
   margin-top: 0.4rem;
   padding-top: 0.4rem;

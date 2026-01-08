@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState, ChangeEvent } from "react";
+import React, { useState, ChangeEvent, useRef } from "react";
 
-import Image from "next/image";
 import "./JourneySection.module.css";
 import StepAnalyzing from "./steps/StepAnalyzing";
 import StepOverview from "./steps/StepOverview";
@@ -18,11 +17,25 @@ import {
 
 type StepId = 1 | 2 | 3 | 4 | 5;
 
+interface CustomCueHelperText {
+  whereToLook: string;
+  whatToCheck: string;
+  bothWaysSupport: string;
+  bothWaysChallenge: string;
+  questions: string[];
+}
+
 interface Cue {
   id: number;
   title: string;
   description: string;
   source?: "model" | "user";
+  cueType?: "CUSTOM";
+  userObservationText?: string;
+  helperTextStatus?: "idle" | "loading" | "ready" | "error";
+  helperText?: CustomCueHelperText | null;
+  userJudgment?: "AI" | "HUMAN" | "UNCERTAIN" | null;
+  isUserProvided?: boolean;
 }
 
 interface PredictionScore {
@@ -45,6 +58,9 @@ interface PredictionResult {
   heatmap: string;
   cue_heatmaps?: { [key: string]: string };
 }
+
+const CUE_TYPES = ["texture", "lighting", "background", "geometry"] as const;
+type CueType = (typeof CUE_TYPES)[number];
 
 const TOTAL_STEPS: StepId = 5;
 
@@ -79,6 +95,21 @@ const JourneySection: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [userCues, setUserCues] = useState<Cue[]>([]);
   const [userCueText, setUserCueText] = useState<string>("");
+  const [cueTextByType, setCueTextByType] = useState<Record<CueType, string | null>>({
+    texture: null,
+    lighting: null,
+    background: null,
+    geometry: null,
+  });
+  const [cueTextStatusByType, setCueTextStatusByType] = useState<
+    Record<CueType, "idle" | "loading" | "ready" | "error">
+  >({
+    texture: "idle",
+    lighting: "idle",
+    background: "idle",
+    geometry: "idle",
+  });
+  const cueTextCacheRef = useRef<Map<string, string>>(new Map());
 
   const [cueAnswers, setCueAnswers] = useState<Record<number, "agree" | "not_sure" | "disagree">>({});
 
@@ -159,6 +190,38 @@ const JourneySection: React.FC = () => {
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
+  };
+
+  const hashString = (value?: string | null): string => {
+    if (!value) return "none";
+    const step = Math.max(1, Math.floor(value.length / 500));
+    let hash = 0;
+    for (let i = 0; i < value.length; i += step) {
+      hash = (hash * 31 + value.charCodeAt(i)) | 0;
+    }
+    return `${hash}_${value.length}`;
+  };
+
+  const buildCueCacheKey = (
+    cueType: CueType,
+    heatmapBase64: string,
+    imageBase64: string | null,
+    modelId: string
+  ): string => {
+    return `${modelId}|${cueType}|${hashString(imageBase64)}|${hashString(heatmapBase64)}`;
+  };
+
+  const getCueType = (title?: string): CueType | null => {
+    const normalized = (title || "").toLowerCase();
+    return CUE_TYPES.find((type) => type === normalized) ?? null;
+  };
+
+  const ensureCueTextMap = (
+    value: Record<string, unknown>
+  ): value is Record<CueType, string> => {
+    return CUE_TYPES.every(
+      (type) => typeof value[type] === "string" && (value[type] as string).trim().length > 0
+    );
   };
 
   const modelCues: Cue[] =
@@ -260,23 +323,110 @@ const JourneySection: React.FC = () => {
     return null;
   };
 
+  const requestCustomCueHelper = async (cueId: number, observationText: string) => {
+    if (!predictionResult || !uploadedBase64) {
+      setUserCues((prev) =>
+        prev.map((cue) =>
+          cue.id === cueId ? { ...cue, helperTextStatus: "error" } : cue
+        )
+      );
+      return;
+    }
+
+    setUserCues((prev) =>
+      prev.map((cue) =>
+        cue.id === cueId
+          ? { ...cue, helperTextStatus: "loading", helperText: null }
+          : cue
+      )
+    );
+
+    try {
+      const response = await fetch("/api/explain-custom-cue", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prediction_label: predictionResult.prediction,
+          prediction_confidence: predictionResult.confidence,
+          cue_type: "CUSTOM",
+          cue_title: "Your observation",
+          user_observation: observationText,
+          image_base64: uploadedBase64 ?? undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Custom cue helper request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      const helperText: CustomCueHelperText = {
+        whereToLook: data.where_to_look ?? "",
+        whatToCheck: data.what_to_check ?? "",
+        bothWaysSupport: data.both_ways_support ?? "",
+        bothWaysChallenge: data.both_ways_challenge ?? "",
+        questions: Array.isArray(data.questions) ? data.questions : [],
+      };
+
+      setUserCues((prev) =>
+        prev.map((cue) =>
+          cue.id === cueId
+            ? { ...cue, helperTextStatus: "ready", helperText }
+            : cue
+        )
+      );
+    } catch (error) {
+      console.error("Error generating custom cue helper text", error);
+      setUserCues((prev) =>
+        prev.map((cue) =>
+          cue.id === cueId ? { ...cue, helperTextStatus: "error" } : cue
+        )
+      );
+    }
+  };
+
   const handleAddUserCue = () => {
     const text = userCueText.trim();
-    if (!text) return;
+    if (text.length < 12) return;
+
+    const existingCustomCue = userCues.find((cue) => cue.cueType === "CUSTOM");
+    if (
+      existingCustomCue &&
+      existingCustomCue.userObservationText === text
+    ) {
+      setSelectedCueId(existingCustomCue.id);
+      setUserCueText("");
+      return;
+    }
 
     const nextId =
-      userCues.length > 0 ? Math.max(...userCues.map((c) => c.id)) + 1 : 10000;
+      existingCustomCue?.id ??
+      (userCues.length > 0 ? Math.max(...userCues.map((c) => c.id)) + 1 : 10000);
 
     const newCue: Cue = {
       id: nextId,
       title: "Your observation",
       description: text,
       source: "user",
+      cueType: "CUSTOM",
+      userObservationText: text,
+      helperTextStatus: "loading",
+      helperText: null,
+      userJudgment: null,
+      isUserProvided: true,
     };
 
-    setUserCues((prev) => [newCue, ...prev]);
+    setUserCues((prev) =>
+      existingCustomCue
+        ? prev.map((cue) => (cue.id === nextId ? newCue : cue))
+        : [newCue, ...prev]
+    );
     setUserCueText("");
     setSelectedCueId(nextId);
+    requestCustomCueHelper(nextId, text);
   };
 
   const selectedCue =
@@ -284,6 +434,9 @@ const JourneySection: React.FC = () => {
 
   const selectedBackendCue =
     predictionResult?.cues?.find((c) => c.id === selectedCueId) ?? null;
+  const selectedCueType = getCueType(selectedBackendCue?.title);
+  const selectedCustomCue =
+    selectedCue?.cueType === "CUSTOM" ? selectedCue : null;
 
   const handlePrevious = () => {
     if (currentStep === 4) {
@@ -357,6 +510,18 @@ const JourneySection: React.FC = () => {
 
     // Markeer dat de analyse bezig is en ga naar de analyzing view
     setIsAnalyzing(true);
+    setCueTextByType({
+      texture: null,
+      lighting: null,
+      background: null,
+      geometry: null,
+    });
+    setCueTextStatusByType({
+      texture: "idle",
+      lighting: "idle",
+      background: "idle",
+      geometry: "idle",
+    });
     setCurrentStep(2 as StepId);
 
     // Fire-and-forget async flow
@@ -377,6 +542,7 @@ const JourneySection: React.FC = () => {
 
         const data = await response.json();
         setPredictionResult(data);
+        await preloadCueTexts(data);
         console.log("Prediction result:", data);
       } catch (error) {
         console.error("Error during prediction:", error);
@@ -400,9 +566,147 @@ const JourneySection: React.FC = () => {
     setSelectedCueId(1);
     setPredictionResult(null);
     setIsAnalyzing(false);
+    setCueTextByType({
+      texture: null,
+      lighting: null,
+      background: null,
+      geometry: null,
+    });
+    setCueTextStatusByType({
+      texture: "idle",
+      lighting: "idle",
+      background: "idle",
+      geometry: "idle",
+    });
     setCueAnswers({});
     setUserCues([]);
     setUserCueText("");
+  };
+
+  const preloadCueTexts = async (result: PredictionResult) => {
+    if (!result.cues || result.cues.length === 0) {
+      return;
+    }
+
+    const modelId = result.model || "unknown";
+    const cuePayloads = CUE_TYPES.map((cueType) => {
+      const cue = result.cues.find((item) => item.title.toLowerCase() === cueType);
+      return {
+        cue_type: cueType,
+        cue_title: cue?.title ?? cueType,
+        cue_score: cue?.score ?? 0,
+        heatmap_base64: result.cue_heatmaps?.[cueType] || result.heatmap || "",
+      };
+    });
+
+    const cachedCueText: Record<CueType, string | null> = {
+      texture: null,
+      lighting: null,
+      background: null,
+      geometry: null,
+    };
+    const nextStatus: Record<CueType, "idle" | "loading" | "ready" | "error"> = {
+      texture: "idle",
+      lighting: "idle",
+      background: "idle",
+      geometry: "idle",
+    };
+    let needsFetch = false;
+
+    cuePayloads.forEach((cue) => {
+      const cueType = cue.cue_type as CueType;
+      const cacheKey = buildCueCacheKey(
+        cueType,
+        cue.heatmap_base64,
+        uploadedBase64,
+        modelId
+      );
+      const cached = cueTextCacheRef.current.get(cacheKey) ?? null;
+      cachedCueText[cueType] = cached;
+      if (cached) {
+        nextStatus[cueType] = "ready";
+      } else {
+        nextStatus[cueType] = "loading";
+        needsFetch = true;
+      }
+    });
+
+    setCueTextByType(cachedCueText);
+    setCueTextStatusByType(nextStatus);
+
+    if (!needsFetch) {
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/explain-cues-batch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prediction_label: result.prediction,
+          prediction_confidence: result.confidence,
+          image_context: `The model predicted ${result.prediction.toUpperCase()} with ${(
+            result.confidence * 100
+          ).toFixed(1)}% confidence for this image.`,
+          image_base64: uploadedBase64 ?? undefined,
+          cues: cuePayloads,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Batch cue explanation request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const cueTextMap = data?.cue_text_by_type ?? data ?? {};
+
+      if (!ensureCueTextMap(cueTextMap)) {
+        throw new Error("Cue text response missing expected cue types.");
+      }
+
+      const nextCueText: Record<CueType, string | null> = {
+        texture: cueTextMap.texture,
+        lighting: cueTextMap.lighting,
+        background: cueTextMap.background,
+        geometry: cueTextMap.geometry,
+      };
+
+      const readyStatus: Record<CueType, "idle" | "loading" | "ready" | "error"> = {
+        texture: "ready",
+        lighting: "ready",
+        background: "ready",
+        geometry: "ready",
+      };
+
+      cuePayloads.forEach((cue) => {
+        const cueType = cue.cue_type as CueType;
+        const cacheKey = buildCueCacheKey(
+          cueType,
+          cue.heatmap_base64,
+          uploadedBase64,
+          modelId
+        );
+        const cueText = nextCueText[cueType];
+        if (cueText) {
+          cueTextCacheRef.current.set(cacheKey, cueText);
+        } else {
+          readyStatus[cueType] = "error";
+        }
+      });
+
+      setCueTextByType(nextCueText);
+      setCueTextStatusByType(readyStatus);
+    } catch (error) {
+      console.error("Error preloading cue explanations", error);
+      setCueTextStatusByType({
+        texture: "error",
+        lighting: "error",
+        background: "error",
+        geometry: "error",
+      });
+    }
   };
 
   return (
@@ -504,7 +808,7 @@ const JourneySection: React.FC = () => {
                       type="button"
                       className="journey-footer-button journey-footer-button-primary"
                       onClick={handleAddUserCue}
-                      disabled={!userCueText.trim()}
+                      disabled={userCueText.trim().length < 12}
                       style={{ whiteSpace: "nowrap" }}
                     >
                       Add cue
@@ -557,7 +861,22 @@ const JourneySection: React.FC = () => {
                 }
                 originalImageSrc={uploadedPreviewUrl || undefined}
                 image_base64={uploadedBase64 || undefined}
-                explanation={selectedCue.description}
+                cueText={selectedCueType ? cueTextByType[selectedCueType] : null}
+                cueTextStatus={
+                  selectedCueType ? cueTextStatusByType[selectedCueType] : "idle"
+                }
+                helperText={selectedCustomCue?.helperText ?? null}
+                helperTextStatus={selectedCustomCue?.helperTextStatus ?? "idle"}
+                onRetryHelperText={
+                  selectedCustomCue
+                    ? () =>
+                        requestCustomCueHelper(
+                          selectedCustomCue.id,
+                          selectedCustomCue.userObservationText ||
+                            selectedCustomCue.description
+                        )
+                    : undefined
+                }
                 cueType={selectedBackendCue?.title.toLowerCase()}
                 predictionLabel={predictionResult?.prediction}
                 predictionConfidence={predictionResult?.confidence}
