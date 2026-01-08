@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Image from "next/image";
 import { Skeleton } from "@mui/material";
+import CueImageMagnifier from "./CueImageMagnifier";
 import "./StepCue.module.css";
 
 type Decision = "agree" | "not_sure" | "disagree" | null;
@@ -272,13 +272,7 @@ const StepCue: React.FC<StepCueProps> = ({
             <div className="cue-image-panel">
               <div className="cue-image-label">Original image</div>
               <div className="cue-image-wrapper cue-image-wrapper--original">
-                <Image
-                  src={originalImageSrc}
-                  alt="Original uploaded image"
-                  fill
-                  sizes="(max-width: 768px) 100vw, 50vw"
-                  className="cue-image"
-                />
+                <CueImageMagnifier src={originalImageSrc} alt="Original uploaded image" />
               </div>
             </div>
           )}
@@ -288,12 +282,9 @@ const StepCue: React.FC<StepCueProps> = ({
               {originalImageSrc ? "Model focus overlay" : "Model focus"}
             </div>
             <div className="cue-image-wrapper cue-image-wrapper--overlay">
-              <Image
+              <CueImageMagnifier
                 src={imageSrc}
                 alt="Model focus overlay for the selected cue"
-                fill
-                sizes="(max-width: 768px) 100vw, 50vw"
-                className="cue-image"
               />
             </div>
             <p className="cue-image-legend">
