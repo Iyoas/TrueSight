@@ -34,8 +34,12 @@ const CueImageMagnifier: React.FC<CueImageMagnifierProps> = ({
     const y = event.clientY - rect.top;
     const clampedX = Math.max(radius, Math.min(x, rect.width - radius));
     const clampedY = Math.max(radius, Math.min(y, rect.height - radius));
-    const backgroundX = -(clampedX * zoom - radius);
-    const backgroundY = -(clampedY * zoom - radius);
+    const maxBgX = -(rect.width * zoom - lensSize);
+    const maxBgY = -(rect.height * zoom - lensSize);
+    const unclampedBgX = -(x * zoom - radius);
+    const unclampedBgY = -(y * zoom - radius);
+    const backgroundX = Math.min(0, Math.max(maxBgX, unclampedBgX));
+    const backgroundY = Math.min(0, Math.max(maxBgY, unclampedBgY));
 
     lens.style.left = `${clampedX - radius}px`;
     lens.style.top = `${clampedY - radius}px`;
