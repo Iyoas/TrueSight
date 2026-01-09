@@ -1,4 +1,15 @@
 import React, { useEffect, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  Chip,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  Stack,
+} from "@mui/material";
 import "./StepConclusion.module.css";
 import {
   getDecisionLabel,
@@ -16,6 +27,17 @@ export interface ConclusionCueSummary {
   source?: "model" | "user" | "both";
   note?: string;
   userJudgement?: "agree" | "not_sure" | "disagree";
+}
+
+export interface CueRecapItem {
+  id: number | string;
+  title: string;
+  originalSrc?: string;
+  overlaySrc?: string;
+  modelScore?: number;
+  userJudgement?: "agree" | "not_sure" | "disagree";
+  isCustom?: boolean;
+  observationText?: string;
 }
 
 export interface StepConclusionProps {
@@ -38,6 +60,7 @@ export interface StepConclusionProps {
 
   // Optional impact / context
   impactLevel?: "low" | "medium" | "high";
+  cueRecapItems?: CueRecapItem[];
 
   // Callbacks for buttons (parent can handle navigation / saving)
   onFinish?: () => void;
@@ -61,6 +84,19 @@ const formatProbability = (p?: number): string | null => {
   return `${pct}%`;
 };
 
+const judgementLabelMap = {
+  agree: "Suspicious",
+  disagree: "Not suspicious",
+  not_sure: "Not sure",
+} as const;
+
+const getJudgementLabel = (
+  judgement?: "agree" | "not_sure" | "disagree"
+): string => {
+  if (!judgement) return "Not answered";
+  return judgementLabelMap[judgement];
+};
+
 const StepConclusion: React.FC<StepConclusionProps> = ({
   modelLabel,
   modelProbability,
@@ -72,6 +108,7 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
   userConfidence,
   modelConfidenceText,
   impactLevel,
+  cueRecapItems = [],
   onFinish,
   onTryAnother,
 }) => {
@@ -123,6 +160,9 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [isSummaryReady, setIsSummaryReady] = useState(false);
+  const [previewImage, setPreviewImage] = useState<{ src: string; label: string } | null>(
+    null
+  );
   const jointOutcomeTitle = getJointConclusionTitle(finalConclusion);
   const jointOutcomeCallout = getJointOutcomeCallout(finalConclusion);
   const partialAgreementSubtitle =
@@ -221,6 +261,131 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
     />
   );
 
+  const ImagePreviewDialog: React.FC<{
+    open: boolean;
+    src: string;
+    label: string;
+    onClose: () => void;
+  }> = ({ open, src, label, onClose }) => (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle className="recap-dialog-title">
+        {label}
+        <IconButton
+          aria-label="Close image preview"
+          onClick={onClose}
+          className="recap-dialog-close"
+        >
+          ×
+        </IconButton>
+      </DialogTitle>
+      <DialogContent className="recap-dialog-content">
+        <img src={src} alt={label} className="recap-dialog-image" />
+      </DialogContent>
+    </Dialog>
+  );
+
+  const CueRecapCard: React.FC<{ item: CueRecapItem }> = ({ item }) => {
+    const judgementLabel = getJudgementLabel(item.userJudgement);
+    return (
+      <Card className="recap-card" variant="outlined">
+        <CardHeader
+          title={item.title}
+          className="recap-card-header"
+          action={
+            <Chip
+              size="small"
+              label={judgementLabel}
+              className="recap-judgement-chip"
+            />
+          }
+        />
+        <CardContent className="recap-card-content">
+          <div className="recap-card-body">
+            <div className="recap-images">
+              <div className="recap-image-panel">
+                <span className="recap-image-label">Original</span>
+                {item.originalSrc ? (
+                  <button
+                    type="button"
+                    className="recap-image-button"
+                    onClick={() =>
+                      setPreviewImage({ src: item.originalSrc as string, label: "Original" })
+                    }
+                  >
+                    <img
+                      src={item.originalSrc}
+                      alt={`${item.title} original`}
+                      className="recap-image"
+                    />
+                  </button>
+                ) : (
+                  <div className="recap-image-placeholder">No image</div>
+                )}
+              </div>
+
+              {!item.isCustom && (
+                <div className="recap-image-panel">
+                  <span className="recap-image-label">Model focus</span>
+                  {item.overlaySrc ? (
+                    <button
+                      type="button"
+                      className="recap-image-button"
+                      onClick={() =>
+                        setPreviewImage({
+                          src: item.overlaySrc as string,
+                          label: "Model focus",
+                        })
+                      }
+                    >
+                      <img
+                        src={item.overlaySrc}
+                        alt={`${item.title} model focus`}
+                        className="recap-image"
+                      />
+                    </button>
+                  ) : (
+                    <div className="recap-image-placeholder">No overlay available</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <Stack spacing={0.6} className="recap-text">
+              <span className="recap-text-line">Your judgment: {judgementLabel}</span>
+              {typeof item.modelScore === "number" && (
+                <span className="recap-text-line">
+                  Model focus score: {Math.round(item.modelScore * 100)}%
+                </span>
+              )}
+              {item.isCustom && item.observationText && (
+                <span className="recap-text-line recap-text-observation">
+                  Your observation: {item.observationText}
+                </span>
+              )}
+            </Stack>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const CueRecapSection: React.FC = () => {
+    if (!cueRecapItems || cueRecapItems.length === 0 || showSkeleton) {
+      return null;
+    }
+
+    return (
+      <section className="conclusion-section">
+        <h3 className="conclusion-section-title">Cue recap</h3>
+        <div className="recap-card-list">
+          {cueRecapItems.map((item) => (
+            <CueRecapCard key={item.id} item={item} />
+          ))}
+        </div>
+      </section>
+    );
+  };
+
   const handleDownloadInfo = () => {
     if (typeof window === "undefined") return;
 
@@ -315,6 +480,14 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
 
   return (
     <section className="step step-conclusion">
+      {previewImage && (
+        <ImagePreviewDialog
+          open={Boolean(previewImage)}
+          src={previewImage.src}
+          label={previewImage.label}
+          onClose={() => setPreviewImage(null)}
+        />
+      )}
       {/* Header */}
       <header className="step-header">
         <h2 className="step-title">
@@ -464,6 +637,8 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
               </>
             )}
           </section>
+
+          <CueRecapSection />
 
           {/* How you got here */}
           <section className="conclusion-section">

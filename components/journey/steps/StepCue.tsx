@@ -55,8 +55,8 @@ const StepCue: React.FC<StepCueProps> = ({
   const [decision, setDecision] = useState<Decision>(existingAnswer ?? null);
   const isUserCue = cueSource === "user";
   const isHowToReadLoading = isUserCue
-    ? helperTextStatus !== "ready"
-    : cueTextStatus !== "ready";
+    ? helperTextStatus === "loading" || helperTextStatus === "idle"
+    : cueTextStatus === "loading" || cueTextStatus === "idle";
 
   useEffect(() => {
     setDecision(existingAnswer ?? null);
@@ -197,12 +197,6 @@ const StepCue: React.FC<StepCueProps> = ({
       {/* Decision section */}
       <div className="cue-decisions">
         <h4 className="cue-decisions-title">Your judgment on this cue</h4>
-        <p className="cue-decisions-description">
-          Use the questions above to reflect, then choose whether you consider this cue suspicious
-          or not. Your answer does not change the model&apos;s prediction, but it helps you reason
-          about how much weight to give this cue.
-        </p>
-
         <div className="cue-decision-buttons">
           <button
             type="button"

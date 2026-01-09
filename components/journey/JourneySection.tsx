@@ -905,6 +905,29 @@ const JourneySection: React.FC = () => {
                 humanDecision={humanDecision}
                 finalConclusion={finalConclusion}
                 keyCues={keyCues}
+                cueRecapItems={derivedCues.map((cue) => {
+                  const isCustom = cue.cueType === "CUSTOM";
+                  const overlaySrc = isCustom
+                    ? undefined
+                    : predictionResult?.cue_heatmaps?.[
+                        cue.title.toLowerCase()
+                      ] || predictionResult?.heatmap || undefined;
+                  const score =
+                    predictionResult?.cues?.find((c) => c.id === cue.id)?.score;
+
+                  return {
+                    id: cue.id,
+                    title: cue.title,
+                    originalSrc: uploadedPreviewUrl || undefined,
+                    overlaySrc,
+                    modelScore: score,
+                    userJudgement: cueAnswers[cue.id],
+                    isCustom,
+                    observationText: isCustom
+                      ? cue.userObservationText || cue.description
+                      : undefined,
+                  };
+                })}
                 impactLevel={undefined}
                 onFinish={handleStartOver}
                 onTryAnother={handleStartOver}

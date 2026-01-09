@@ -854,18 +854,31 @@ async def explain_conclusion(payload: ConclusionSummaryRequest):
     )
 
     user_message = (
-        "Here is the structured information about this case:\n\n"
-        f"- AI decision: {model_label_text} (confidence: {model_conf_pct}).\n"
-        f"- Human decision: {user_label_text} (self-reported confidence: {user_conf_text}).\n"
+        "Case data (authoritative, do not reinterpret):\n\n"
+        f"- Model decision: {model_label_text} (confidence: {model_conf_pct}).\n"
+        f"- Human decision: {user_label_text}.\n"
         f"- Joint outcome: {agreement_text}.\n\n"
-        "Key cues considered by the human:\n"
+
+        "Cues reviewed by the human:\n"
         f"{cues_block}\n\n"
-        "Please write a short narrative paragraph that:\n"
-        "- explains what the AI model predicted and what the human concluded,\n"
-        "- describes how the human used the cues to reach their conclusion,\n"
-        "- explains how the AI and human conclusions relate (agreement, partial agreement, or disagreement),\n"
-        "- briefly reflects on what this relationship implies for certainty or risk,\n"
-        "- and ends with a final sentence starting exactly with 'Final joint conclusion:' followed by the joint outcome."
+
+        "INSTRUCTIONS:\n"
+        "Write a short explanation following the required structure.\n\n"
+
+        "For PART 2 (fixed meaning of the joint outcome), use EXACTLY ONE of the following, "
+        "depending on the joint outcome:\n\n"
+
+        "If Joint outcome = Agreement:\n"
+        "\"This indicates that both the model and the human assessment point in the same direction, "
+        "allowing for a shared interpretation based on the available evidence.\"\n\n"
+
+        "If Joint outcome = Partial agreement:\n"
+        "\"This indicates that one assessment provides a clear indication, while the other remains inconclusive, "
+        "meaning that no shared conclusion can be established based on the current evidence.\"\n\n"
+
+        "If Joint outcome = Disagreement:\n"
+        "\"This indicates that the model and the human assessment reach opposing conclusions, "
+        "making it impossible to determine the image’s origin without further investigation.\"\n"
     )
 
     completion = openai_client.chat.completions.create(
