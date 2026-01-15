@@ -186,6 +186,7 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
     const controller = new AbortController();
 
     const fetchSummary = async () => {
+      const startedAt = Date.now();
       try {
         setIsLoadingSummary(true);
         setSummaryError(null);
@@ -206,7 +207,7 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
           })),
         };
 
-        const response = await fetch("http://localhost:8000/explain_conclusion", {
+        const response = await fetch("/api/explain-conclusion", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -235,6 +236,18 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
           "I couldn't generate a narrative summary for this conclusion. You can still use the structured details below."
         );
       } finally {
+        if (controller.signal.aborted) {
+          return;
+        }
+        const elapsed = Date.now() - startedAt;
+        const minSkeletonMs = 350;
+        const waitTime = Math.max(0, minSkeletonMs - elapsed);
+        if (waitTime > 0) {
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        }
+        if (controller.signal.aborted) {
+          return;
+        }
         setIsLoadingSummary(false);
         setIsSummaryReady(true);
       }
@@ -248,6 +261,7 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
   }, [modelLabel, modelProbability, userLabel, userConfidence, hasUserVerdict, agreementFlag, keyCues]);
 
   const showSkeleton = !isSummaryReady;
+  const showSummarySkeleton = showSkeleton || isLoadingSummary;
 
   type SkeletonSize = "title" | "subtitle" | "label" | "text" | "small";
   const SkeletonLine: React.FC<{ width?: string; size?: SkeletonSize }> = ({
@@ -603,7 +617,7 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
             <h3 className="conclusion-section-title">
               {showSkeleton ? <SkeletonLine size="subtitle" width="58%" /> : "Summary of this conclusion"}
             </h3>
-            {showSkeleton ? (
+            {showSummarySkeleton ? (
               <div>
                 <SkeletonLine size="text" width="95%" />
                 <span style={{ display: "block", marginTop: "0.5rem" }}>
@@ -615,11 +629,6 @@ const StepConclusion: React.FC<StepConclusionProps> = ({
               </div>
             ) : (
               <>
-                {isLoadingSummary && (
-                  <p className="conclusion-text">
-                    Summarizing how you and the model arrived at this conclusion…
-                  </p>
-                )}
                 {summaryError && (
                   <p className="conclusion-text conclusion-text--muted">
                     {summaryError}

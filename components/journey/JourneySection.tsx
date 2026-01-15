@@ -120,6 +120,11 @@ const JourneySection: React.FC = () => {
     }));
   };
 
+  const handleSelectCueFromOverview = (cueId: number) => {
+    setSelectedCueId(cueId);
+    setCurrentStep(4);
+  };
+
   const deriveModelLabel = (): VerdictLabel => {
     const raw = predictionResult?.prediction?.toLowerCase() ?? "";
 
@@ -777,7 +782,7 @@ const JourneySection: React.FC = () => {
               <div>
                 <StepOverview
                   selectedCueId={selectedCueId}
-                  onSelectCue={setSelectedCueId}
+                  onSelectCue={handleSelectCueFromOverview}
                   predictionResult={predictionResult}
                 />
 
@@ -825,7 +830,7 @@ const JourneySection: React.FC = () => {
                           <button
                             key={cue.id}
                             type="button"
-                            onClick={() => setSelectedCueId(cue.id)}
+                            onClick={() => handleSelectCueFromOverview(cue.id)}
                             style={{
                               textAlign: "left",
                               padding: "0.75rem",
