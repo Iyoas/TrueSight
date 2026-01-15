@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from PIL import Image as PILImage
 import io
+import re
 import json
 import torch
 import numpy as np
@@ -819,10 +820,13 @@ async def explain_conclusion(payload: ConclusionSummaryRequest):
     agreement_text: str
     if payload.agreement is True:
         agreement_text = "The user and the model agree on the final conclusion."
+        joint_outcome_label = "Agreement"
     elif payload.agreement is False:
         agreement_text = "The user and the model disagree on the final conclusion."
+        joint_outcome_label = "Disagreement"
     else:
         agreement_text = "It is unclear whether the user and the model agree."
+        joint_outcome_label = "Partial agreement"
 
     # Build a concise textual representation of the key cues
     cue_lines: List[str] = []
@@ -848,16 +852,19 @@ async def explain_conclusion(payload: ConclusionSummaryRequest):
         "- Describe agreement, partial agreement, or disagreement explicitly as relationships between the AI and the human.\n"
         "- NEVER state or imply that the model was uncertain.\n"
         "- NEVER present the final outcome as purely human-led or purely model-led.\n"
+        "- NEVER start any sentence with 'The AI model'. Always refer to the automated system as 'the model'.\n"
+        "- NEVER use absolute wording such as 'complete certainty', 'absolute certainty', or 'definitive certainty'.\n"
         "- Use plain language, no bullet points, 3–6 sentences total.\n"
-        "- Your answer MUST end with a separate final sentence that begins with exactly: 'Final joint conclusion:' "
-        "followed by a description of the joint outcome (agreement, partial agreement, or disagreement).\n"
+        "- Your answer MUST end with a separate final sentence that begins with exactly: 'TrueSight’s final joint conclusion:' "
+        "followed by the joint outcome label exactly as provided.\n"
     )
 
     user_message = (
         "Case data (authoritative, do not reinterpret):\n\n"
         f"- Model decision: {model_label_text} (confidence: {model_conf_pct}).\n"
         f"- Human decision: {user_label_text}.\n"
-        f"- Joint outcome: {agreement_text}.\n\n"
+        f"- Joint outcome: {agreement_text}.\n"
+        f"- Joint outcome label (use verbatim in final sentence): {joint_outcome_label}\n\n"
 
         "Cues reviewed by the human:\n"
         f"{cues_block}\n\n"
@@ -881,15 +888,44 @@ async def explain_conclusion(payload: ConclusionSummaryRequest):
         "making it impossible to determine the image’s origin without further investigation.\"\n"
     )
 
-    completion = openai_client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": user_message},
-        ],
-    )
+    def is_summary_valid(text: str) -> bool:
+        normalized = text.strip()
+        if not normalized:
+            return False
+        if re.search(r"(^|[.!?]\s+)The AI model", normalized):
+            return False
+        forbidden_phrases = [
+            "complete certainty",
+            "absolute certainty",
+            "definitive certainty",
+        ]
+        if any(phrase in normalized.lower() for phrase in forbidden_phrases):
+            return False
+        required_prefix = "TrueSight’s final joint conclusion:"
+        final_sentence = normalized.splitlines()[-1].strip()
+        if final_sentence != f"{required_prefix} {joint_outcome_label}":
+            return False
+        return True
 
-    raw_text = completion.choices[0].message.content or ""
+    def generate_summary(system_text: str) -> str:
+        completion = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_text},
+                {"role": "user", "content": user_message},
+            ],
+        )
+        return completion.choices[0].message.content or ""
+
+    raw_text = generate_summary(system_message)
+    if not is_summary_valid(raw_text):
+        retry_system = (
+            system_message
+            + "\n"
+            + "If any rule is violated, regenerate internally and output only a compliant response."
+        )
+        raw_text = generate_summary(retry_system)
+
     summary = raw_text.strip()
     if not summary:
         summary = (
